@@ -677,6 +677,6 @@ static CCDirector *_sharedDirector = nil;
 	[_SPFLabel setPosition: ccpAdd( ccp(0,17), CC_DIRECTOR_STATS_POSITION ) ];
 	[_FPSLabel setPosition: CC_DIRECTOR_STATS_POSITION ];
 }
-
+- (BOOL)prefersStatusBarHidden {return YES;}
 @end
 

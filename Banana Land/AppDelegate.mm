@@ -9,8 +9,7 @@
 #import "cocos2d.h"
 
 #import "AppDelegate.h"
-#import "IntroLayer.h"
-
+#import "johnVideo.h"
 @implementation MyNavigationController
 
 // The available orientations should be defined in the Info.plist file.
@@ -25,7 +24,6 @@
 	// iPad only
 	return UIInterfaceOrientationMaskLandscape;
 }
-
 // Supported orientations. Customize it for your own needs
 // Only valid on iOS 4 / 5. NOT VALID for iOS 6.
 - (BOOL)shouldAutorotateToInterfaceOrientation:(UIInterfaceOrientation)interfaceOrientation
@@ -47,21 +45,259 @@
 	if(director.runningScene == nil) {
 		// Add the first scene to the stack. The director will draw it immediately into the framebuffer. (Animation is started automatically when the view is displayed.)
 		// and add the scene to the stack. The director will run it when it automatically when the view is displayed.
-		[director runWithScene: [IntroLayer scene]];
+        [NSThread sleepForTimeInterval:2.0];
+		[director runWithScene: [johnVideo scene]];
 	}
 }
 @end
 
 
 @implementation AppController
-
+@synthesize musicPlayerSelected;
+@synthesize postScoreStage;
+@synthesize session = _session;
 @synthesize window=window_, navController=navController_, director=director_;
+////////////////////////////
+-(void) setUp
+{
+    //    [[DatabaseController sharedManager] init];
+	////////check session login////////
+    
+	NSDictionary * userDefault = [[NSUserDefaults standardUserDefaults] dictionaryRepresentation];
+	NSString * programReg = [userDefault objectForKey:@"bananaland_session"];
+    
+	if(programReg == NULL){
+		NSUserDefaults *prefs = [NSUserDefaults standardUserDefaults];
+		[prefs setObject:@"bananaland" forKey:@"bananaland_session"];
+		[prefs setObject:@"off" forKey:@"bananaland_session_facebook_login"];
+		[prefs setObject:@"" forKey:@"bananaland_session_playerSelected"];
+		[prefs setObject:@"0" forKey:@"bananaland_session_score"];
+		[prefs setObject:@"0" forKey:@"bananaland_session_level"];
+        [[NSUserDefaults standardUserDefaults] synchronize];
+	}
+	////////check session login////////
+}
+////////////////////////////facebook login controller delegate//////////////////////////////
+-(void)postScoreToFaceBook:(UIImage*)img
+{
+    [postScoreStage setString:[NSMutableString stringWithString:@"LOAD"]];
+    if (!self.session.isOpen) {
+        [self openSession];
+        [self postScoreToFaceBook];
+    }else{
+        [self postScoreToFaceBook];
+    }
+    if (self.session.isOpen) {
+        NSLog(@"publish_stream");
+        NSArray *permissions = [[NSArray alloc] initWithObjects:@"publish_stream",@"publish_actions", nil];
+        [FBSession openActiveSessionWithPublishPermissions:permissions defaultAudience:FBSessionDefaultAudienceEveryone allowLoginUI:YES completionHandler:
+         ^(FBSession *session,
+           FBSessionState state, NSError * error) {
+             [self postScoreStateChanged:session state:state error:error image:img];
+         }];
+    }
+}
+-(void)postScoreToFaceBook
+{
+    //////////POST//////////
+    NSDictionary * userDefault = [[NSUserDefaults standardUserDefaults] dictionaryRepresentation];
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"http://test.khomkrid.com/bananaland/score.php"]];
+    [request setHTTPMethod:@"POST"];
+    [request setValue:@"application/x-www-form-urlencoded" forHTTPHeaderField:@"content-type"];
 
+    
+    NSString * postString = [NSString stringWithFormat:@"USERNAME=%@&FIRSTNAME=%@&LASTNAME=%@&LOCATION_NAME=%@&GANDER=%@&EMAIL=%@&userImageURL=%@&SCORE=%d&LEVEL=%d",[userDefault objectForKey:@"username"],[userDefault objectForKey:@"firstname"],[userDefault objectForKey:@"lastname"],[userDefault objectForKey:@"location"],[userDefault objectForKey:@"gander"],[userDefault objectForKey:@"email"],[userDefault objectForKey:@"userImageURL"],m_totalScore,m_level];
+    
+    NSData *data = [postString dataUsingEncoding:NSUTF8StringEncoding];
+    [request setHTTPBody:data];
+    [request setValue:[NSString stringWithFormat:@"%u", [data length]] forHTTPHeaderField:@"Content-Length"];
+    [NSURLConnection connectionWithRequest:request delegate:self];
+
+    //////////POST//////////9
+}
+- (void)connectionDidFinishLoading:(NSURLConnection *)connection
+{
+    [postScoreStage setString:[NSMutableString stringWithString:@"FINISH"]];
+    
+    UIAlertView *alertView = [[UIAlertView alloc]
+                              initWithTitle:@"Shared Score"
+                              message:@"แชร์คะแนนเรียบร้อยแล้วครับ"
+                              delegate:nil
+                              cancelButtonTitle:@"OK"
+                              otherButtonTitles:nil];
+    [alertView show];
+    
+}
+- (void)postScoreStateChanged:(FBSession *)session
+                        state:(FBSessionState) state
+                        error:(NSError *)error image:(UIImage*)img
+{
+    switch (state) {
+        case FBSessionStateOpen: {
+            FBRequestConnection *connection = [[FBRequestConnection alloc] init];
+            connection.errorBehavior = (FBRequestConnectionErrorBehavior)(FBRequestConnectionErrorBehaviorReconnectSession|FBRequestConnectionErrorBehaviorAlertUser|FBRequestConnectionErrorBehaviorRetry);
+            
+            [connection addRequest:[FBRequest requestForUploadPhoto:img]
+                 completionHandler:^(FBRequestConnection *connection, id result, NSError *error) {
+                     if (error) {
+                         NSLog(@"%@",error);
+                         UIAlertView *alertView = [[UIAlertView alloc]
+                                                   initWithTitle:@"Error"
+                                                   message:error.localizedDescription
+                                                   delegate:nil
+                                                   cancelButtonTitle:@"OK"
+                                                   otherButtonTitles:nil];
+                         [alertView show];
+                     }else{
+                         UIAlertView *alertView = [[UIAlertView alloc]
+                                                   initWithTitle:@"Complete"
+                                                   message:@"บันทึกคะแนนเรียบร้อยแล้วครับ"
+                                                   delegate:nil
+                                                   cancelButtonTitle:@"OK"
+                                                   otherButtonTitles:nil];
+                         [alertView show];
+                     }
+                     
+                 }];
+            
+            
+            [connection start];
+        }
+            break;
+        case FBSessionStateClosed:
+        case FBSessionStateClosedLoginFailed:
+            [FBSession.activeSession closeAndClearTokenInformation];
+            break;
+        default:
+            break;
+    }
+    
+    if (error) {
+        UIAlertView *alertView = [[UIAlertView alloc]
+                                  initWithTitle:@"Error"
+                                  message:error.localizedDescription
+                                  delegate:nil
+                                  cancelButtonTitle:@"OK"
+                                  otherButtonTitles:nil];
+        [alertView show];
+    }
+    
+}
+-(NSMutableString*)getPostScoreStage
+{
+    return postScoreStage;
+}
+- (void)sessionStateChanged:(FBSession *)session
+                      state:(FBSessionState) state
+                      error:(NSError *)error
+{
+    self.session = session;
+    
+    switch (state) {
+        case FBSessionStateOpen: {
+            FBRequestConnection *connection = [[FBRequestConnection alloc] init];
+            connection.errorBehavior = (FBRequestConnectionErrorBehavior)(FBRequestConnectionErrorBehaviorReconnectSession|FBRequestConnectionErrorBehaviorAlertUser|FBRequestConnectionErrorBehaviorRetry);
+
+            
+            [connection addRequest:[FBRequest requestForMe]
+                 completionHandler:
+             ^(FBRequestConnection *connection, NSDictionary<FBGraphUser> *user, NSError *error) {
+                 if (!error) {
+
+                     NSUserDefaults *prefs = [NSUserDefaults standardUserDefaults];
+                     [prefs setObject:user.username forKey:@"username"];
+                     [prefs setObject:user.id forKey:@"userid"];
+                     [prefs setObject:user.first_name forKey:@"firstname"];
+                     [prefs setObject:user.last_name forKey:@"lastname"];
+                     [prefs setObject:[user objectForKey:@"gender"] forKey:@"gander"];
+                     [prefs setObject:[user objectForKey:@"email"] forKey:@"email"];
+                     [prefs setObject:user.location[@"name"] forKey:@"location"];
+                     [prefs setObject:[NSString stringWithFormat:@"https://graph.facebook.com/%@/picture?type=small", user.username] forKey:@"userImageURL"];
+                     [[NSUserDefaults standardUserDefaults] synchronize];
+                 }
+             }
+             ];
+            [connection start];
+        }
+            break;
+        case FBSessionStateClosed:
+        case FBSessionStateClosedLoginFailed:
+            [FBSession.activeSession closeAndClearTokenInformation];
+            break;
+        default:
+            break;
+    }
+    
+    if (error) {
+        NSLog(@"%@",error);
+        UIAlertView *alertView = [[UIAlertView alloc]
+                                  initWithTitle:@"Error"
+                                  message:error.localizedDescription
+                                  delegate:nil
+                                  cancelButtonTitle:@"OK"
+                                  otherButtonTitles:nil];
+        [alertView show];
+    }
+}
+- (void)openSession
+{
+    NSArray *permissions = [[NSArray alloc] initWithObjects:@"basic_info",@"public_profile",@"email",@"user_friends", nil];
+
+    if (!self.session.isOpen) {
+        self.session = [[FBSession alloc] initWithPermissions:permissions];
+        NSLog(@"self.session.state %u",self.session.state);
+        [self.session openWithCompletionHandler:^(FBSession *session,
+                                                         FBSessionState status,
+                                                         NSError *error) {
+            [FBSession openActiveSessionWithReadPermissions:permissions allowLoginUI:YES completionHandler:
+             ^(FBSession *session,
+               FBSessionState state, NSError * error) {
+                 [self sessionStateChanged:session state:state error:error];
+             }];
+            
+        }];
+    }
+}
+-(void)setScore:(int)score andLevel:(int)level
+{
+    m_totalScore = score;
+    m_level = level;
+}
+-(int)getLevel
+{
+    return m_level;
+}
+-(int)getScore
+{
+    return m_totalScore;
+}
+////////////////////////////facebook login controller delegate//////////////////////////////
+- (BOOL)application:(UIApplication *)application
+            openURL:(NSURL *)url
+  sourceApplication:(NSString *)sourceApplication
+         annotation:(id)annotation
+{
+//    return [FBSession.activeSession handleOpenURL:url];
+    return [FBAppCall handleOpenURL:url
+                  sourceApplication:sourceApplication
+                        withSession:self.session];
+}
+///////////////////////////
+-(void)setmusicPlayerSelected:(NSMutableString*)str
+{
+    musicPlayerSelected = str;
+}
+-(NSMutableString*)getmusicPlayerSelected
+{
+    return musicPlayerSelected;
+}
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
 {
 	// Create the main window
+    [self setUp];
+    postScoreStage = [[NSMutableString alloc] initWithString:@"FINISH"];
 	window_ = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
-	
+    
 	
 	// CCGLView creation
 	// viewWithFrame: size of the OpenGL view. For full screen use [_window bounds]
@@ -92,7 +328,7 @@
 	director_.wantsFullScreenLayout = YES;
 	
 	// Display FSP and SPF
-	[director_ setDisplayStats:YES];
+	[director_ setDisplayStats:NO];
 	
 	// set FPS at 60
 	[director_ setAnimationInterval:1.0/60];
@@ -152,6 +388,9 @@
 // call got rejected
 -(void) applicationDidBecomeActive:(UIApplication *)application
 {
+    [FBAppCall handleDidBecomeActiveWithSession:self.session];
+    [FBAppEvents activateApp];
+    [FBAppCall handleDidBecomeActiveWithSession:self.session];
 	[[CCDirector sharedDirector] setNextDeltaTimeZero:YES];
 	if( [navController_ visibleViewController] == director_ )
 		[director_ resume];
@@ -172,6 +411,7 @@
 // application will be killed
 - (void)applicationWillTerminate:(UIApplication *)application
 {
+    [self.session close];
 	CC_DIRECTOR_END();
 }
 
